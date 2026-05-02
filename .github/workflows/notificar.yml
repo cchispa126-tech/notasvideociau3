@@ -1,0 +1,24 @@
+name: Enviar notificación a dispositivos
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  enviar-notificacion:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar notificación push a Firebase
+        run: |
+          curl -X POST \
+            -H "Authorization: key=${{ secrets.FCM_SERVER_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "to": "/topics/campana-general",
+              "notification": {
+                "title": "📝 Bloc de Notas",
+                "body": "Alguien ha actualizado las notas",
+                "sound": "default"
+              }
+            }' \
+            https://fcm.googleapis.com/fcm/send
