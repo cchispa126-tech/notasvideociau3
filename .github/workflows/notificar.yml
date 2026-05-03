@@ -1,24 +1,41 @@
-name: Enviar notificación a dispositivos
+name: Enviar notificación FCM v1
 
 on:
   push:
     branches: [ main, master ]
 
 jobs:
-  enviar-notificacion:
+  send-notification:
     runs-on: ubuntu-latest
     steps:
-      - name: Enviar notificación push a Firebase
+      - name: Enviar notificación
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+          PROJECT_ID: "ciau-5d2b2"
+          TOPIC: "campana-general"
         run: |
-          curl -X POST \
-            -H "Authorization: key=${{ secrets.FCM_SERVER_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "to": "/topics/campana-general",
+          echo "$SERVICE_ACCOUNT" > /tmp/sa.json
+          sudo apt-get update && sudo apt-get install -y jq
+          
+          CLIENT_EMAIL=$(jq -r '.client_email' /tmp/sa.json)
+          PRIVATE_KEY=$(jq -r '.private_key' /tmp/sa.json)
+          
+          NOW=$(date +%s)
+          EXP=$((NOW + 3600))
+          
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w 0 | tr -d '=' | tr '/+' '_-')
+          CLAIM=$(echo -n "{\"iss\":\"$CLIENT_EMAIL\",\"scope\":\"https://www.googleapis.com/auth/firebase.messaging\",\"aud\":\"https://oauth2.googleapis.com/token\",\"iat\":$NOW,\"exp\":$EXP}" | base64 -w 0 | tr -d '=' | tr '/+' '_-')
+          SIGNATURE=$(echo -n "$HEADER.$CLAIM" | openssl dgst -sha256 -sign <(echo -e "$PRIVATE_KEY") | base64 -w 0 | tr -d '=' | tr '/+' '_-')
+          
+          JWT="$HEADER.$CLAIM.$SIGNATURE"
+          ACCESS_TOKEN=$(curl -s -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=$JWT" https://oauth2.googleapis.com/token | jq -r '.access_token')
+          
+          curl -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" -d '{
+            "message": {
+              "topic": "'"$TOPIC"'",
               "notification": {
                 "title": "📝 Bloc de Notas",
-                "body": "Alguien ha actualizado las notas",
-                "sound": "default"
+                "body": "Alguien ha actualizado las notas"
               }
-            }' \
-            https://fcm.googleapis.com/fcm/send
+            }
+          }' https://fcm.googleapis.com/v1/projects/$PROJECT_ID/messages:send
